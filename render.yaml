@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: crisiswatch
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn 'app:create_app()' --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    envVars:
+      - key: NEWS_API_KEY
+        sync: false  # User must set this manually
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: REFRESH_INTERVAL
+        value: "300"
+      - key: FLASK_DEBUG
+        value: "false"
