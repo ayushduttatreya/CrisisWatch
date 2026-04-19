@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { Article, Stats, TrendData, EntitiesData, AISummary, NLQueryResponse } from '@/types'
+import type { Article, Stats, EntitiesData, AISummary, NLQueryResponse } from '@/types'
 
 const API_BASE = ''
 
@@ -14,42 +14,71 @@ export function useDashboardData() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [articlesRes, statsRes, trendRes, entitiesRes] = await Promise.all([
+      // Fetch all data in parallel, but handle each failure independently
+      const [
+        articlesRes,
+        statsRes,
+        trendRes,
+        entitiesRes
+      ] = await Promise.allSettled([
         fetch(`${API_BASE}/api/articles?limit=20&order=desc`),
         fetch(`${API_BASE}/api/stats`),
         fetch(`${API_BASE}/api/trend`),
         fetch(`${API_BASE}/api/entities?hours=24&top=5`)
       ])
 
-      if (!articlesRes.ok || !statsRes.ok || !trendRes.ok) {
-        throw new Error('API error')
+      // Process articles
+      if (articlesRes.status === 'fulfilled' && articlesRes.value.ok) {
+        const data = await articlesRes.value.json()
+        setArticles(data.articles || [])
+      } else {
+        console.error('Failed to fetch articles')
+        setArticles([])
       }
 
-      const articlesData = await articlesRes.json()
-      const statsData = await statsRes.json()
-      const trendData = await trendRes.json()
-
-      setArticles(articlesData.articles)
-      setStats(statsData)
-      setTrend(trendData.trend)
-
-      if (entitiesRes.ok) {
-        const entitiesData = await entitiesRes.json()
-        setEntities(entitiesData)
+      // Process stats
+      let spikeDetected = false
+      if (statsRes.status === 'fulfilled' && statsRes.value.ok) {
+        const data = await statsRes.value.json()
+        setStats(data)
+        spikeDetected = data.is_spike || false
+      } else {
+        console.error('Failed to fetch stats')
+        setStats({ total: 0, mood_avg: 0, is_spike: false, alerts: [] })
       }
 
-      // Fetch AI summary if spike is detected
-      if (statsData.is_spike) {
+      // Process trend
+      if (trendRes.status === 'fulfilled' && trendRes.value.ok) {
+        const data = await trendRes.value.json()
+        setTrend(data.trend || [])
+      } else {
+        console.error('Failed to fetch trend')
+        setTrend([])
+      }
+
+      // Process entities (optional)
+      if (entitiesRes.status === 'fulfilled' && entitiesRes.value.ok) {
+        const data = await entitiesRes.value.json()
+        setEntities(data)
+      } else {
+        setEntities(null)
+      }
+
+      // Fetch AI summary only if spike detected
+      if (spikeDetected) {
         try {
           const summaryRes = await fetch(`${API_BASE}/api/ai/summary`)
           if (summaryRes.ok) {
             const summaryData = await summaryRes.json()
             if (summaryData.summary) {
               setAiSummary(summaryData)
+            } else {
+              setAiSummary(null)
             }
           }
         } catch (e) {
           console.log('AI summary not available')
+          setAiSummary(null)
         }
       } else {
         setAiSummary(null)
@@ -57,6 +86,7 @@ export function useDashboardData() {
 
       setError(null)
     } catch (err) {
+      console.error('Dashboard data fetch error:', err)
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoading(false)

@@ -2,10 +2,14 @@
 
 import os
 from functools import lru_cache
-from typing import List, Optional
+from typing import List, Optional, Any
 
+import json
+import logging
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator
+from pydantic import field_validator, ValidationInfo
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -17,8 +21,36 @@ class Settings(BaseSettings):
     NEWS_API_KEY: str = ""
     NEWS_API_URL: str = "https://newsapi.org/v2/top-headlines"
     
-    # Categories to fetch from NewsAPI
-    NEWS_CATEGORIES: List[str] = ["business", "world"]
+    # Categories to fetch from NewsAPI (Typed as Any to bypass strict JSON parsing from env)
+    NEWS_CATEGORIES: Any = ["business", "world"]
+    
+    @field_validator('NEWS_CATEGORIES', mode='before')
+    @classmethod
+    def parse_news_categories(cls, v: Any, info: ValidationInfo) -> List[str]:
+        """Safely parse NEWS_CATEGORIES from env, accepting JSON or CSV."""
+        if not v:
+            return ["business", "world"]
+        if isinstance(v, list):
+            return v
+            
+        try:
+            # Try parsing as JSON first
+            if isinstance(v, str) and v.strip().startswith('['):
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if item]
+        except json.JSONDecodeError:
+            logger.warning(f"Failed to parse NEWS_CATEGORIES as JSON. Falling back to CSV or default. Value: {v}")
+            pass
+            
+        # Try parsing as CSV
+        if isinstance(v, str):
+            items = [item.strip() for item in v.split(',') if item.strip()]
+            if items:
+                return items
+                
+        logger.warning(f"Could not parse NEWS_CATEGORIES, using defaults. Invalid value: {v}")
+        return ["business", "world"]
     
     # RSS Feeds - Curated high-quality sources (20 total)
     # Focus: Geopolitics, markets, macro, conflict, policy - NO noise
@@ -99,11 +131,11 @@ class Settings(BaseSettings):
     OPENROUTER_TIMEOUT: int = 30
     OPENROUTER_MAX_CONCURRENT: int = 5
     
-    # AI Features Toggle
-    AI_ENABLED: bool = True
-    AI_ENTITY_EXTRACTION: bool = True
-    AI_BIAS_DETECTION: bool = True
-    AI_CRISIS_SUMMARY: bool = True
+    # AI Features Toggle - Temporarily disabled for stability (Phase 9)
+    AI_ENABLED: bool = False
+    AI_ENTITY_EXTRACTION: bool = False
+    AI_BIAS_DETECTION: bool = False
+    AI_CRISIS_SUMMARY: bool = False
 
 
 @lru_cache()

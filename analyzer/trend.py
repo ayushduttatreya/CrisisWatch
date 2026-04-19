@@ -19,26 +19,21 @@ class TrendEngine:
         self.spike_active = False
     
     def process_articles(self, articles: List[Dict]) -> None:
-        """Process batch of articles and update trend data."""
+        """Process batch of articles and update trend data per article."""
         if not articles:
             return
         
-        # Calculate average sentiment for this batch
-        sentiments = [a["sentiment"] for a in articles if "sentiment" in a]
-        if not sentiments:
-            return
-        
-        batch_average = sum(sentiments) / len(sentiments)
-        
-        # Add to rolling window
-        trend_cache.add(batch_average)
-        
-        # Check for spike
-        self._check_spike(batch_average)
+        # Add to rolling window per article to ensure window fills
+        for article in articles:
+            if "sentiment" in article:
+                trend_cache.add(article["sentiment"])
+                
+        # Check for spike using the latest average
+        current_avg = trend_cache.get_average()
+        self._check_spike(current_avg)
         
         logger.info(
-            f"Trend updated: batch_avg={batch_average:.3f}, "
-            f"window_avg={trend_cache.get_average():.3f}, "
+            f"Trend updated: current_avg={current_avg:.3f}, "
             f"points={len(trend_cache.get_trend())}"
         )
     

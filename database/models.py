@@ -2,8 +2,11 @@
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 from peewee import (
     CharField,
@@ -38,6 +41,7 @@ class Article(BaseModel):
     category = CharField(default="general")
     hash = CharField(unique=True, index=True)
     fetched_at = DateTimeField(default=datetime.utcnow)
+    published_at = DateTimeField(null=True)
     
     # AI-enriched fields
     entities = TextField(null=True)  # JSON string: {"people": [], "countries": [], "organizations": []}
@@ -76,6 +80,7 @@ class Article(BaseModel):
         url: str,
         sentiment: float,
         category: str = "general",
+        published_at: Optional[str] = None,
     ) -> Optional["Article"]:
         """Create article with deduplication check."""
         article_hash = cls.generate_hash(title, url)
@@ -91,9 +96,32 @@ class Article(BaseModel):
             sentiment=sentiment,
             category=category,
             hash=article_hash,
+            published_at=published_at,
         )
     
-    def to_dict(self, include_ai: bool = True) -> dict:
+    def get_time_weighted_score(self, now: Optional[datetime] = None) -> Dict[str, Any]:
+        """Calculate time-decayed sentiment score.
+        score = sentiment * max(0, 1 - (age_hours / 24))
+        """
+        now = now or datetime.utcnow()
+        pub_time = self.published_at or self.fetched_at
+        
+        # Calculate age in hours
+        age_hours = max(0.0, (now - pub_time).total_seconds() / 3600.0)
+        
+        # Calculate freshness weight (0 to 1)
+        freshness_weight = max(0.0, 1.0 - (age_hours / 24.0))
+        
+        # Calculate final score
+        score = self.sentiment * freshness_weight
+        
+        return {
+            "age_hours": round(age_hours, 2),
+            "freshness_weight": round(freshness_weight, 4),
+            "score": round(score, 4),
+        }
+    
+    def to_dict(self, include_ai: bool = True, computed_score: Optional[Dict[str, Any]] = None) -> dict:
         """Convert to dictionary for API responses."""
         result = {
             "id": self.id,
@@ -103,7 +131,11 @@ class Article(BaseModel):
             "category": self.category,
             "url": self.url,
             "fetched_at": self.fetched_at.isoformat(),
+            "published_at": self.published_at.isoformat() if hasattr(self.published_at, 'isoformat') else self.published_at,
         }
+        
+        if computed_score:
+            result.update(computed_score)
         
         if include_ai:
             result["entities"] = self.get_entities()
@@ -148,9 +180,52 @@ class AISummary(BaseModel):
 
 
 def init_database() -> None:
-    """Initialize database tables."""
+    """Initialize database tables and handle schema migrations."""
     db.connect(reuse_if_open=True)
     db.create_tables([Article, AISummary], safe=True)
+    
+    # Run simple migrations for missing columns
+    from peewee import OperationalError
+    
+    try:
+        db.execute_sql('ALTER TABLE article ADD COLUMN entities TEXT;')
+    except OperationalError:
+        pass
+        
+    try:
+        db.execute_sql('ALTER TABLE article ADD COLUMN bias VARCHAR(255);')
+    except OperationalError:
+        pass
+        
+    try:
+        db.execute_sql('ALTER TABLE article ADD COLUMN bias_confidence REAL;')
+    except OperationalError:
+        pass
+        
+    try:
+        db.execute_sql('ALTER TABLE article ADD COLUMN published_at DATETIME;')
+    except OperationalError:
+        pass
+        
+    # Clean stale data on boot
+    clean_stale_data()
+
+def clean_stale_data() -> None:
+    """Delete articles older than 24 hours to ensure strict time-based correctness."""
+    try:
+        cutoff = datetime.utcnow() - timedelta(hours=24)
+        
+        # Delete where published_at is explicitly old, OR (if null) where fetched_at is old
+        # Fallback to fetched_at ensures legacy polluted data is wiped out too
+        q = Article.delete().where(
+            (Article.published_at < cutoff) | 
+            (Article.published_at.is_null() & (Article.fetched_at < cutoff))
+        )
+        deleted = q.execute()
+        if deleted > 0:
+            logger.info(f"Database Cleanup: Deleted {deleted} stale articles older than 24 hours.")
+    except Exception as e:
+        logger.error(f"Failed to clean stale data: {e}")
 
 
 def close_database() -> None:

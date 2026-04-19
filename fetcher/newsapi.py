@@ -3,6 +3,8 @@
 import logging
 from typing import Dict, List, Any
 
+from datetime import datetime, timedelta, timezone
+
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -52,8 +54,28 @@ class NewsAPIFetcher:
                 return []
             
             articles = []
+            discarded = 0
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+            
             for item in data.get("articles", []):
                 if not item.get("title") or not item.get("url"):
+                    continue
+                    
+                pub_date = None
+                pub_str = item.get("publishedAt")
+                if pub_str:
+                    try:
+                        pub_date = datetime.fromisoformat(pub_str.replace('Z', '+00:00'))
+                        if pub_date.tzinfo is None:
+                            pub_date = pub_date.replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        pub_date = datetime.now(timezone.utc)
+                else:
+                    pub_date = datetime.now(timezone.utc)
+                    
+                if pub_date < cutoff:
+                    discarded += 1
+                    logger.debug(f"Discarded outdated article: {item['title'][:50]}...")
                     continue
                     
                 articles.append({
@@ -61,9 +83,10 @@ class NewsAPIFetcher:
                     "source": item.get("source", {}).get("name", "NewsAPI"),
                     "url": item["url"],
                     "category": category,
+                    "published_at": pub_date.isoformat(),
                 })
             
-            logger.info(f"Fetched {len(articles)} articles from NewsAPI category: {category}")
+            logger.info(f"Fetched {len(articles)} articles from NewsAPI category: {category} (Discarded {discarded} outdated)")
             return articles
             
         except httpx.HTTPStatusError as e:

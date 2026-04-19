@@ -1,6 +1,5 @@
 """Flask API application for CrisisWatch."""
 
-import logging
 import asyncio
 from typing import Dict, Any
 from datetime import datetime, timedelta
@@ -16,21 +15,27 @@ from scheduler import start_scheduler, stop_scheduler
 from analyzer.entity_extractor import aggregate_entities
 from analyzer.nl_query import query_news
 from analyzer.ai_summary import get_summary_for_spike
+from utils.logger import get_logger
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
+# Use centralized logger
+logger = get_logger("api")
 
-settings = get_settings()
+# Wrap settings load to prevent hard crash if config.py somehow fails
+try:
+    settings = get_settings()
+except Exception as e:
+    logger.error(f"Failed to load settings: {e}")
+    # Fallback to minimal settings if everything fails
+    from config import Settings
+    settings = Settings()
+
 scheduler = None
 
 
 def create_app() -> Flask:
-    """Application factory for Flask."""
-    app = Flask(__name__, static_folder="static", static_url_path="")
-    CORS(app)
+    """Application factory for Flask - API-only service."""
+    app = Flask(__name__)
+    CORS(app, origins="*")
     
     # Initialize database
     init_database()
@@ -38,12 +43,17 @@ def create_app() -> Flask:
     # Start background scheduler (only once)
     global scheduler
     if scheduler is None:
-        scheduler = start_scheduler()
+        try:
+            scheduler = start_scheduler()
+        except Exception as e:
+            logger.error(f"Failed to start scheduler: {e}")
     
     @app.teardown_appcontext
     def close_db(error):
         """Close database connection after each request."""
         close_database()
+        
+    logger.info("Backend initialized successfully")
     
     # ============ API Routes ============
     
@@ -51,31 +61,75 @@ def create_app() -> Flask:
     def get_articles():
         """Get articles with pagination and ordering."""
         try:
-            limit = request.args.get("limit", 10, type=int)
+            limit = request.args.get("limit", 20, type=int)
             order = request.args.get("order", "desc").lower()
             include_ai = request.args.get("ai", "true").lower() == "true"
             
+            hours = request.args.get("hours", 24, type=int)
+            # Hard limit maximum query window to 48 hours to strictly prevent older data
+            cutoff_hours = min(hours, 48)
+            cutoff = datetime.utcnow() - timedelta(hours=cutoff_hours)
+            
             # Validate params
-            limit = max(1, min(limit, 100))  # Clamp between 1-100
+            limit = max(1, min(limit, 100))
+            sort_mode = request.args.get("sort", "impact").lower()
             
-            # Build query
-            query = Article.select()
+            # Build query with strict baseline time constraint
+            # Fallback to fetched_at if published_at is null
+            query = Article.select().where(
+                (Article.published_at >= cutoff) | 
+                (Article.published_at.is_null() & (Article.fetched_at >= cutoff))
+            )
             
-            if order == "asc":
-                query = query.order_by(Article.fetched_at.asc())
+            articles_db = list(query)
+            
+            # Compute time-aware scores in Python
+            now = datetime.utcnow()
+            scored_articles = []
+            
+            for a in articles_db:
+                score_data = a.get_time_weighted_score(now)
+                scored_articles.append((a, score_data))
+                
+                # Log score calculation for debugging
+                logger.debug(
+                    f"Article '{a.title[:30]}...' -> Age: {score_data['age_hours']}h | "
+                    f"Weight: {score_data['freshness_weight']} | Score: {score_data['score']}"
+                )
+            
+            # Python in-memory sorting
+            if sort_mode == "latest":
+                # Sort strictly by publication time
+                scored_articles.sort(
+                    key=lambda x: x[0].published_at or x[0].fetched_at, 
+                    reverse=(order == "desc")
+                )
             else:
-                query = query.order_by(Article.fetched_at.desc())
+                # Default "impact": sort by score ascending (most negative sentiment first)
+                # If order == asc, most severe crises are at the top
+                scored_articles.sort(
+                    key=lambda x: x[1]['score'], 
+                    reverse=(order == "desc")
+                )
             
-            articles = list(query.limit(limit))
+            # Apply limit after ranking
+            final_articles = [
+                a.to_dict(include_ai=include_ai, computed_score=score_data) 
+                for a, score_data in scored_articles[:limit]
+            ]
+            
+            logger.info(f"API: /api/articles - returned {len(final_articles)} articles (sort={sort_mode})")
             
             return jsonify({
-                "articles": [a.to_dict(include_ai=include_ai) for a in articles]
+                "articles": final_articles,
+                "count": len(final_articles)
             })
             
         except Exception as e:
-            logger.error(f"Error fetching articles: {e}")
+            logger.error(f"API ERROR: /api/articles - {e}", exc_info=True)
             return jsonify({
                 "articles": [],
+                "count": 0,
                 "error": "Failed to fetch articles"
             }), 500
     
@@ -83,24 +137,28 @@ def create_app() -> Flask:
     def get_stats():
         """Get system statistics and alerts."""
         try:
-            # Get total article count
-            total = Article.select().count()
+            # Get total article count (handle empty DB)
+            total = Article.select().count() or 0
             
-            # Get mood average from cache
+            # Get mood average from cache (handle empty cache)
             cache_stats = get_cache_stats()
+            mood_avg = cache_stats.get("average_sentiment", 0.0) or 0.0
+            is_spike = cache_stats.get("is_spike", False) or False
             
             # Get recent alerts
-            alerts = alert_store.get_alerts(10)
+            alerts = alert_store.get_alerts(10) or []
+            
+            logger.info(f"API: /api/stats - total={total}, mood={mood_avg:.3f}, spike={is_spike}")
             
             return jsonify({
                 "total": total,
-                "mood_avg": round(cache_stats["average_sentiment"], 3),
-                "is_spike": cache_stats["is_spike"],
+                "mood_avg": round(mood_avg, 3),
+                "is_spike": is_spike,
                 "alerts": alerts,
             })
             
         except Exception as e:
-            logger.error(f"Error fetching stats: {e}")
+            logger.error(f"API ERROR: /api/stats - {e}", exc_info=True)
             return jsonify({
                 "total": 0,
                 "mood_avg": 0.0,
@@ -115,25 +173,45 @@ def create_app() -> Flask:
         try:
             trend = trend_cache.get_trend()
             
+            # Ensure we always return a valid array
+            if not isinstance(trend, list):
+                trend = []
+            
+            logger.info(f"API: /api/trend - returned {len(trend)} data points")
+            
             return jsonify({
-                "trend": trend
+                "trend": trend,
+                "count": len(trend)
             })
             
         except Exception as e:
-            logger.error(f"Error fetching trend: {e}")
+            logger.error(f"API ERROR: /api/trend - {e}", exc_info=True)
             return jsonify({
                 "trend": [],
+                "count": 0,
                 "error": "Failed to fetch trend"
             }), 500
     
     @app.route("/api/health", methods=["GET"])
     def health_check():
         """Health check endpoint."""
-        return jsonify({
+        try:
+            # Test database connection
+            Article.select().limit(1).count()
+            db_status = "connected"
+        except Exception as e:
+            db_status = f"error: {str(e)}"
+        
+        response = {
             "status": "healthy",
+            "database": db_status,
             "scheduler_running": scheduler.running if scheduler else False,
             "ai_enabled": settings.AI_ENABLED,
-        })
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        
+        logger.info(f"API: /api/health - {response['status']}")
+        return jsonify(response)
     
     # ============ AI Endpoints ============
     
@@ -218,10 +296,10 @@ def create_app() -> Flask:
             recent_articles = (
                 Article.select()
                 .where(
-                    (Article.fetched_at > cutoff) & 
+                    ((Article.published_at > cutoff) | (Article.published_at.is_null() & (Article.fetched_at > cutoff))) & 
                     (Article.entities.is_null(False))
                 )
-                .order_by(Article.fetched_at.desc())
+                .order_by(Article.published_at.desc(), Article.fetched_at.desc())
                 .limit(100)
             )
             
@@ -296,12 +374,6 @@ def create_app() -> Flask:
             return jsonify({
                 "error": "Failed to process query"
             }), 500
-    
-    # Serve frontend
-    @app.route("/", methods=["GET"])
-    def index():
-        """Serve the dashboard."""
-        return app.send_static_file("index.html")
     
     return app
 

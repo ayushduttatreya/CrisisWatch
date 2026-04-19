@@ -1,17 +1,20 @@
 version: '3.8'
 
 services:
-  crisiswatch:
+  # Backend API service
+  backend:
     build: .
-    container_name: crisiswatch
-    ports:
-      - "5000:5000"
+    container_name: crisiswatch-backend
+    expose:
+      - "5000"
     env_file:
       - .env
     environment:
       - DATABASE_PATH=/app/data/crisiswatch.db
+      - FLASK_PORT=5000
     volumes:
-      - ./data:/app/data
+      # Use a named volume for easier resets via 'docker compose down -v'
+      - db_data:/app/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/api/health')"]
@@ -19,17 +22,27 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    networks:
+      - crisiswatch-net
 
-  # Optional: Add nginx for production
-  nginx:
-    image: nginx:alpine
-    container_name: crisiswatch-nginx
+  # Frontend service (nginx serving built React app)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: crisiswatch-frontend
     ports:
       - "80:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - crisiswatch
+      - backend
     restart: unless-stopped
-    profiles:
-      - prod
+    networks:
+      - crisiswatch-net
+
+networks:
+  crisiswatch-net:
+    driver: bridge
+
+volumes:
+  # To reset the database schema, run: docker compose down -v
+  db_data:

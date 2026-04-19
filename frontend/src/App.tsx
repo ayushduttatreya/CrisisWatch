@@ -6,11 +6,13 @@ import { SiteHeader } from "@/components/site-header"
 import { AISummaryPanel } from "@/components/ai-summary-panel"
 import { EntityLeaderboard } from "@/components/entity-leaderboard"
 import { NLQuery } from "@/components/nl-query"
+import { AlertsPanel } from "@/components/alerts-panel"
 import { useDashboardData } from "@/hooks/use-api"
 import { Skeleton } from "@/components/ui/skeleton"
+import { AlertCircle } from "lucide-react"
 
 function App() {
-  const { articles, stats, trend, entities, aiSummary, loading } = useDashboardData()
+  const { articles, stats, trend, entities, aiSummary, loading, error } = useDashboardData()
 
   if (loading) {
     return (
@@ -37,11 +39,23 @@ function App() {
         <SiteHeader />
         <main className="flex-1 overflow-auto p-6">
           <div className="mx-auto max-w-7xl space-y-6">
+            {error && (
+              <div className="flex items-center gap-2 rounded-md bg-red-500/20 px-4 py-3 text-red-200">
+                <AlertCircle className="h-5 w-5" />
+                <span>Error loading data: {error}</span>
+              </div>
+            )}
+            
             <SectionCards
               total={stats?.total || 0}
               moodAvg={stats?.mood_avg || 0}
               isSpike={stats?.is_spike || false}
               trendPoints={trend?.length || 0}
+            />
+            
+            <AlertsPanel 
+              alerts={stats?.alerts || []} 
+              isSpike={stats?.is_spike || false} 
             />
             
             {aiSummary && <AISummaryPanel summary={aiSummary} />}

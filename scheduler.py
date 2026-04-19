@@ -126,6 +126,7 @@ class NewsPipeline:
                         url=article["url"],
                         sentiment=article["sentiment"],
                         category=article["category"],
+                        published_at=article.get("published_at"),
                     )
                     if result:
                         stored_count += 1
@@ -142,13 +143,14 @@ class NewsPipeline:
             
             logger.info(f"Pipeline complete: {stored_count}/{len(analyzed)} articles stored")
             
-            # Queue AI enrichment tasks (non-blocking)
-            if settings.AI_ENABLED and stored_articles:
-                asyncio.create_task(self._run_ai_enrichment(stored_articles))
+            # AI ENRICHMENT - TEMPORARILY DISABLED FOR STABILITY
+            # Uncomment after system is fully operational
+            # if settings.AI_ENABLED and stored_articles:
+            #     asyncio.create_task(self._run_ai_enrichment(stored_articles))
             
-            # Generate crisis summary if spike detected
-            if settings.AI_CRISIS_SUMMARY and trend_cache.is_spike():
-                asyncio.create_task(self._generate_crisis_summary_if_needed())
+            # Crisis summary generation - TEMPORARILY DISABLED
+            # if settings.AI_CRISIS_SUMMARY and trend_cache.is_spike():
+            #     asyncio.create_task(self._generate_crisis_summary_if_needed())
             
         except Exception as e:
             logger.error(f"Pipeline error: {e}")

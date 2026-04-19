@@ -2,7 +2,7 @@
 
 import logging
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from config import get_settings
@@ -24,18 +24,28 @@ class TrendCache:
         self._values.append(sentiment)
         self._timestamps.append(timestamp or datetime.utcnow())
     
+    def prune(self) -> None:
+        """Remove data points older than 48 hours to prevent stale data dragging down the trend."""
+        cutoff = datetime.utcnow() - timedelta(hours=48)
+        while self._timestamps and self._timestamps[0] < cutoff:
+            self._timestamps.popleft()
+            self._values.popleft()
+            
     def get_average(self) -> float:
         """Calculate average sentiment in window."""
+        self.prune()
         if not self._values:
             return 0.0
         return sum(self._values) / len(self._values)
     
     def get_trend(self) -> List[float]:
         """Get trend values as list."""
+        self.prune()
         return list(self._values)
     
     def is_spike(self, threshold: float = None) -> bool:
         """Detect crisis spike when average sentiment drops below threshold."""
+        self.prune()
         if len(self._values) < 10:  # Need minimum data
             return False
         threshold = threshold or settings.SPIKE_THRESHOLD
