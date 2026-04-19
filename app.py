@@ -1,16 +1,21 @@
 """Flask API application for CrisisWatch."""
 
 import logging
+import asyncio
 from typing import Dict, Any
+from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from peewee import fn
 
 from config import get_settings
-from database.models import Article, init_database, close_database
+from database.models import Article, AISummary, init_database, close_database
 from database.cache import alert_store, trend_cache, get_cache_stats
 from scheduler import start_scheduler, stop_scheduler
+from analyzer.entity_extractor import aggregate_entities
+from analyzer.nl_query import query_news
+from analyzer.ai_summary import get_summary_for_spike
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,6 +53,7 @@ def create_app() -> Flask:
         try:
             limit = request.args.get("limit", 10, type=int)
             order = request.args.get("order", "desc").lower()
+            include_ai = request.args.get("ai", "true").lower() == "true"
             
             # Validate params
             limit = max(1, min(limit, 100))  # Clamp between 1-100
@@ -63,7 +69,7 @@ def create_app() -> Flask:
             articles = list(query.limit(limit))
             
             return jsonify({
-                "articles": [a.to_dict() for a in articles]
+                "articles": [a.to_dict(include_ai=include_ai) for a in articles]
             })
             
         except Exception as e:
@@ -126,7 +132,170 @@ def create_app() -> Flask:
         return jsonify({
             "status": "healthy",
             "scheduler_running": scheduler.running if scheduler else False,
+            "ai_enabled": settings.AI_ENABLED,
         })
+    
+    # ============ AI Endpoints ============
+    
+    @app.route("/api/ai/summary", methods=["GET"])
+    def get_ai_summary():
+        """Get AI-generated crisis summary (only meaningful during spikes)."""
+        try:
+            # Try to get cached summary from database
+            latest = AISummary.get_latest_crisis_summary()
+            
+            # If spike is active but no recent summary, generate one
+            if trend_cache.is_spike() and settings.AI_CRISIS_SUMMARY:
+                # Check if we need a fresh summary
+                if not latest or (datetime.utcnow() - datetime.fromisoformat(latest.generated_at)).seconds > 300:
+                    # Get recent negative articles for summary
+                    negative_articles = (
+                        Article.select()
+                        .where(Article.sentiment < settings.SPIKE_THRESHOLD)
+                        .order_by(Article.fetched_at.desc())
+                        .limit(10)
+                    )
+                    
+                    if negative_articles:
+                        articles_list = [a.to_dict(include_ai=False) for a in negative_articles]
+                        
+                        # Run async summary generation
+                        try:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            summary = loop.run_until_complete(get_summary_for_spike(articles_list))
+                            loop.close()
+                            
+                            if summary:
+                                # Store new summary
+                                AISummary.create(
+                                    summary_type="crisis",
+                                    content=summary.summary,
+                                    headline_count=summary.headline_count,
+                                    avg_sentiment=summary.avg_sentiment,
+                                )
+                                return jsonify({
+                                    "summary": summary.summary,
+                                    "generated_at": summary.generated_at,
+                                    "headline_count": summary.headline_count,
+                                    "cached": False,
+                                })
+                        except Exception as e:
+                            logger.error(f"Failed to generate summary: {e}")
+            
+            # Return cached summary if available
+            if latest:
+                return jsonify({
+                    "summary": latest.content,
+                    "generated_at": latest.generated_at,
+                    "headline_count": latest.headline_count,
+                    "cached": True,
+                })
+            
+            # No summary available
+            return jsonify({
+                "summary": None,
+                "message": "No crisis summary available. Summaries are generated during sentiment spikes.",
+            })
+            
+        except Exception as e:
+            logger.error(f"Error fetching AI summary: {e}")
+            return jsonify({
+                "summary": None,
+                "error": "Failed to fetch summary"
+            }), 500
+    
+    @app.route("/api/entities", methods=["GET"])
+    def get_entities():
+        """Get aggregated entity leaderboard from recent articles."""
+        try:
+            hours = request.args.get("hours", 24, type=int)
+            top_n = request.args.get("top", 10, type=int)
+            
+            cutoff = datetime.utcnow() - timedelta(hours=hours)
+            
+            # Fetch articles with entities in time window
+            recent_articles = (
+                Article.select()
+                .where(
+                    (Article.fetched_at > cutoff) & 
+                    (Article.entities.is_null(False))
+                )
+                .order_by(Article.fetched_at.desc())
+                .limit(100)
+            )
+            
+            # Parse entities
+            from analyzer.entity_extractor import ExtractedEntities
+            entities_list = []
+            for article in recent_articles:
+                entities_dict = article.get_entities()
+                if entities_dict:
+                    entities_list.append(ExtractedEntities(
+                        people=entities_dict.get("people", []),
+                        countries=entities_dict.get("countries", []),
+                        organizations=entities_dict.get("organizations", []),
+                    ))
+            
+            # Aggregate and rank
+            aggregated = aggregate_entities(entities_list, top_n=top_n)
+            
+            return jsonify({
+                "top_entities": aggregated,
+                "time_window_hours": hours,
+                "articles_analyzed": len(entities_list),
+            })
+            
+        except Exception as e:
+            logger.error(f"Error fetching entities: {e}")
+            return jsonify({
+                "top_entities": {"people": [], "countries": [], "organizations": []},
+                "error": "Failed to fetch entities"
+            }), 500
+    
+    @app.route("/api/ai/query", methods=["POST"])
+    def nl_query():
+        """Natural language query over stored news data."""
+        try:
+            data = request.get_json()
+            if not data or "q" not in data:
+                return jsonify({
+                    "error": "Missing required field: 'q'"
+                }), 400
+            
+            query_text = data["q"].strip()
+            if not query_text:
+                return jsonify({
+                    "error": "Query cannot be empty"
+                }), 400
+            
+            max_context = data.get("max_context", 20)
+            
+            # Run async query
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                result = loop.run_until_complete(query_news(query_text, max_context=max_context))
+                loop.close()
+                
+                return jsonify({
+                    "answer": result.answer,
+                    "sources_used": result.sources_used,
+                    "generated_at": result.generated_at,
+                    "success": result.success,
+                })
+            except Exception as e:
+                logger.error(f"NL query processing failed: {e}")
+                return jsonify({
+                    "answer": "I'm unable to process your query at the moment. Please try again later.",
+                    "success": False,
+                }), 500
+                
+        except Exception as e:
+            logger.error(f"Error processing NL query: {e}")
+            return jsonify({
+                "error": "Failed to process query"
+            }), 500
     
     # Serve frontend
     @app.route("/", methods=["GET"])

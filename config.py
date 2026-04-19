@@ -92,6 +92,18 @@ class Settings(BaseSettings):
     # Trend analysis
     TREND_WINDOW_SIZE: int = 60
     SPIKE_THRESHOLD: float = -0.3
+    
+    # OpenRouter AI Configuration
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_MODEL: str = "anthropic/claude-3.5-haiku"
+    OPENROUTER_TIMEOUT: int = 30
+    OPENROUTER_MAX_CONCURRENT: int = 5
+    
+    # AI Features Toggle
+    AI_ENABLED: bool = True
+    AI_ENTITY_EXTRACTION: bool = True
+    AI_BIAS_DETECTION: bool = True
+    AI_CRISIS_SUMMARY: bool = True
 
 
 @lru_cache()

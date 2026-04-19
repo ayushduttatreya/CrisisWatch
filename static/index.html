@@ -224,6 +224,180 @@
             color: #94a3b8;
         }
         
+        /* Bias Indicators */
+        .bias-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .bias-left {
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+        }
+        
+        .bias-right {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+        }
+        
+        .bias-neutral {
+            background: rgba(34, 197, 94, 0.2);
+            color: #4ade80;
+        }
+        
+        .bias-unknown {
+            background: rgba(148, 163, 184, 0.2);
+            color: #94a3b8;
+        }
+        
+        /* AI Summary Panel */
+        .ai-summary-panel {
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+            border: 1px solid #4338ca;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .ai-summary-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+            color: #a5b4fc;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .ai-summary-content {
+            color: #e0e7ff;
+            font-size: 1rem;
+            line-height: 1.6;
+        }
+        
+        .ai-summary-meta {
+            margin-top: 12px;
+            font-size: 0.8rem;
+            color: #818cf8;
+        }
+        
+        /* Entity Leaderboard */
+        .entity-section {
+            margin-bottom: 20px;
+        }
+        
+        .entity-section h3 {
+            font-size: 0.9rem;
+            color: #94a3b8;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .entity-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .entity-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #0f172a;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+        
+        .entity-name {
+            color: #e2e8f0;
+        }
+        
+        .entity-count {
+            background: #3b82f6;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        /* NL Query Section */
+        .nl-query-section {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .nl-query-input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .nl-query-input {
+            flex: 1;
+            padding: 12px 16px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            color: #e2e8f0;
+            font-size: 1rem;
+        }
+        
+        .nl-query-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        
+        .nl-query-btn {
+            padding: 12px 24px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .nl-query-btn:hover {
+            background: #2563eb;
+        }
+        
+        .nl-query-btn:disabled {
+            background: #475569;
+            cursor: not-allowed;
+        }
+        
+        .nl-query-response {
+            background: #0f172a;
+            border-radius: 8px;
+            padding: 16px;
+            color: #e2e8f0;
+            line-height: 1.6;
+            min-height: 60px;
+        }
+        
+        .nl-query-response.empty {
+            color: #64748b;
+            font-style: italic;
+        }
+        
+        .nl-query-meta {
+            margin-top: 10px;
+            font-size: 0.8rem;
+            color: #64748b;
+        }
+        
         /* Alerts Panel */
         .alerts-list {
             max-height: 400px;
@@ -345,6 +519,56 @@
             </div>
 
             <div class="right-column">
+                <!-- AI Crisis Summary -->
+                <div id="aiSummaryPanel" class="ai-summary-panel" style="display: none;">
+                    <div class="ai-summary-header">
+                        <span>🤖</span>
+                        <span>AI Crisis Analysis</span>
+                    </div>
+                    <div id="aiSummaryContent" class="ai-summary-content"></div>
+                    <div id="aiSummaryMeta" class="ai-summary-meta"></div>
+                </div>
+                
+                <!-- NL Query -->
+                <div class="card">
+                    <h2>Ask the News</h2>
+                    <div class="nl-query-section">
+                        <div class="nl-query-input-group">
+                            <input type="text" id="nlQueryInput" class="nl-query-input" placeholder="What is happening in Ukraine?">
+                            <button id="nlQueryBtn" class="nl-query-btn">Ask</button>
+                        </div>
+                        <div id="nlQueryResponse" class="nl-query-response empty">
+                            Ask a question about recent news...
+                        </div>
+                        <div id="nlQueryMeta" class="nl-query-meta"></div>
+                    </div>
+                </div>
+                
+                <!-- Entity Leaderboard -->
+                <div class="card">
+                    <h2>Top Entities (24h)</h2>
+                    <div id="entitiesPanel">
+                        <div class="entity-section">
+                            <h3>🌍 Countries</h3>
+                            <div id="countriesList" class="entity-list">
+                                <div class="no-data">Loading...</div>
+                            </div>
+                        </div>
+                        <div class="entity-section">
+                            <h3>🏢 Organizations</h3>
+                            <div id="organizationsList" class="entity-list">
+                                <div class="no-data">Loading...</div>
+                            </div>
+                        </div>
+                        <div class="entity-section">
+                            <h3>👤 People</h3>
+                            <div id="peopleList" class="entity-list">
+                                <div class="no-data">Loading...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="card">
                     <h2>Alert Panel</h2>
                     <div id="alertsList" class="alerts-list">
@@ -414,10 +638,11 @@
         // Fetch all data
         async function fetchData() {
             try {
-                const [articlesRes, statsRes, trendRes] = await Promise.all([
+                const [articlesRes, statsRes, trendRes, entitiesRes] = await Promise.all([
                     fetch(`${API_BASE}/api/articles?limit=20&order=desc`),
                     fetch(`${API_BASE}/api/stats`),
-                    fetch(`${API_BASE}/api/trend`)
+                    fetch(`${API_BASE}/api/trend`),
+                    fetch(`${API_BASE}/api/entities?hours=24&top=5`)
                 ]);
                 
                 if (!articlesRes.ok || !statsRes.ok || !trendRes.ok) {
@@ -428,18 +653,36 @@
                 const stats = await statsRes.json();
                 const trend = await trendRes.json();
                 
-                updateDashboard(articles, stats, trend);
+                let entities = { top_entities: { people: [], countries: [], organizations: [] } };
+                if (entitiesRes.ok) {
+                    entities = await entitiesRes.json();
+                }
+                
+                // Fetch AI summary if spike is detected
+                let aiSummary = null;
+                if (stats.is_spike) {
+                    try {
+                        const summaryRes = await fetch(`${API_BASE}/api/ai/summary`);
+                        if (summaryRes.ok) {
+                            aiSummary = await summaryRes.json();
+                        }
+                    } catch (e) {
+                        console.log('AI summary not available');
+                    }
+                }
+                
+                updateDashboard(articles, stats, trend, entities, aiSummary);
                 statusText.textContent = 'Live';
                 
             } catch (error) {
                 console.error('API fetch failed, using mock data:', error);
                 statusText.textContent = 'Demo Mode';
-                updateDashboard(mockData.articles, mockData.stats, mockData.trend);
+                updateDashboard(mockData.articles, mockData.stats, mockData.trend, null, null);
             }
         }
         
         // Update dashboard with data
-        function updateDashboard(articles, stats, trend) {
+        function updateDashboard(articles, stats, trend, entities, aiSummary) {
             // Update sentiment banner
             const moodAvg = stats.mood_avg || 0;
             sentimentValue.textContent = moodAvg.toFixed(2);
@@ -471,6 +714,51 @@
             if (stats.alerts) {
                 renderAlerts(stats.alerts);
             }
+            
+            // Update AI summary panel
+            if (aiSummary && aiSummary.summary) {
+                renderAISummary(aiSummary);
+            } else {
+                document.getElementById('aiSummaryPanel').style.display = 'none';
+            }
+            
+            // Update entities
+            if (entities && entities.top_entities) {
+                renderEntities(entities.top_entities);
+            }
+        }
+        
+        // Render AI Summary
+        function renderAISummary(summary) {
+            const panel = document.getElementById('aiSummaryPanel');
+            const content = document.getElementById('aiSummaryContent');
+            const meta = document.getElementById('aiSummaryMeta');
+            
+            content.textContent = summary.summary;
+            meta.textContent = `Based on ${summary.headline_count} headlines • ${summary.cached ? 'Cached' : 'Just generated'}`;
+            panel.style.display = 'block';
+        }
+        
+        // Render Entities
+        function renderEntities(entities) {
+            renderEntityList('countriesList', entities.countries);
+            renderEntityList('organizationsList', entities.organizations);
+            renderEntityList('peopleList', entities.people);
+        }
+        
+        function renderEntityList(elementId, items) {
+            const container = document.getElementById(elementId);
+            if (!items || items.length === 0) {
+                container.innerHTML = '<div class="no-data">No data yet</div>';
+                return;
+            }
+            
+            container.innerHTML = items.map(item => `
+                <div class="entity-item">
+                    <span class="entity-name">${escapeHtml(item.name)}</span>
+                    <span class="entity-count">${item.mentions}</span>
+                </div>
+            `).join('');
         }
         
         // Render headlines
@@ -483,12 +771,22 @@
                     : article.sentiment < -0.05 ? 'Negative' 
                     : 'Neutral';
                 
+                // Add bias badge if available
+                let biasBadge = '';
+                if (article.bias) {
+                    const biasClass = `bias-${article.bias}`;
+                    const biasIcon = article.bias === 'left' ? '←' : article.bias === 'right' ? '→' : article.bias === 'neutral' ? '◆' : '?';
+                    const biasConf = article.bias_confidence ? ` ${(article.bias_confidence * 100).toFixed(0)}%` : '';
+                    biasBadge = `<span class="bias-badge ${biasClass}">${biasIcon}${biasConf}</span>`;
+                }
+                
                 return `
                     <div class="headline-item">
                         <a href="${article.url}" target="_blank" class="headline-title">${escapeHtml(article.title)}</a>
                         <div class="headline-meta">
                             <span>${escapeHtml(article.source)}</span>
                             <span class="sentiment-badge ${sentimentClass}">${sentimentLabel} (${article.sentiment.toFixed(2)})</span>
+                            ${biasBadge}
                             <span>${formatTime(article.fetched_at)}</span>
                         </div>
                     </div>
@@ -620,6 +918,49 @@
         
         // Handle window resize
         window.addEventListener('resize', drawTrendChart);
+        
+        // NL Query functionality
+        const nlQueryInput = document.getElementById('nlQueryInput');
+        const nlQueryBtn = document.getElementById('nlQueryBtn');
+        const nlQueryResponse = document.getElementById('nlQueryResponse');
+        const nlQueryMeta = document.getElementById('nlQueryMeta');
+        
+        async function submitQuery() {
+            const query = nlQueryInput.value.trim();
+            if (!query) return;
+            
+            nlQueryBtn.disabled = true;
+            nlQueryBtn.textContent = 'Thinking...';
+            nlQueryResponse.textContent = 'Analyzing news data...';
+            nlQueryResponse.classList.remove('empty');
+            nlQueryMeta.textContent = '';
+            
+            try {
+                const res = await fetch(`${API_BASE}/api/ai/query`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ q: query, max_context: 20 })
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    nlQueryResponse.textContent = data.answer;
+                    nlQueryMeta.textContent = `Sources: ${data.sources_used} articles • ${formatTime(data.generated_at)}`;
+                } else {
+                    nlQueryResponse.textContent = 'Sorry, I could not process your query. Please try again.';
+                }
+            } catch (e) {
+                nlQueryResponse.textContent = 'Network error. Please check your connection.';
+            } finally {
+                nlQueryBtn.disabled = false;
+                nlQueryBtn.textContent = 'Ask';
+            }
+        }
+        
+        nlQueryBtn.addEventListener('click', submitQuery);
+        nlQueryInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') submitQuery();
+        });
     </script>
 </body>
 </html>

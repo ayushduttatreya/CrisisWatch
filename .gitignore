@@ -98,6 +98,8 @@ Desktop.ini
 # =============================================================================
 # Testing & Coverage
 # =============================================================================
+# Testing & Coverage
+# =============================================================================
 .pytest_cache/
 .coverage
 .coverage.*
@@ -119,6 +121,40 @@ pm-debug.log*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# =============================================================================
+# Node.js / Frontend (npm/yarn)
+# =============================================================================
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+npm-shrinkwrap.json
+dist/
+build/
+.eslintcache
+.next/
+out/
+.nuxt
+.cache/
+.vuepress/dist
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
+.vuepress/dist
+.cache
+.output
+.nuxt
+dist
+.cache/
+.output/
+.nuxt/
+.vercel/
+.build/
+vite-bundle.json
 
 # =============================================================================
 # Docker (keep some, ignore others)
